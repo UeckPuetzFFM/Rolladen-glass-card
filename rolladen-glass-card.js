@@ -1,7 +1,7 @@
 /* Rolladen Glass Card - Home Assistant Lovelace custom card
  * No external dependencies. HACS-compatible.
  */
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.2.0";
 const DEFAULTS = {
   name: "WC Rolladen",
   travel_time: 20,
@@ -16,7 +16,9 @@ const DEFAULTS = {
   sun_entity: "sun.sun",
   col_open: "#34c759",
   col_move: "#ff9f0a",
-  col_closed: "#98a2b3"
+  col_closed: "#98a2b3",
+  show_controls: true,
+  show_slider: true
 };
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -34,6 +36,7 @@ class RolladenGlassCard extends HTMLElement {
     this._started = 0;
     this._lastState = "";
     this._lastPosition = null;
+    this._sliderDraft = null;
   }
 
   setConfig(config) {
@@ -66,6 +69,7 @@ class RolladenGlassCard extends HTMLElement {
     const hasPosition = raw !== undefined && raw !== null && !Number.isNaN(Number(raw));
     const position = hasPosition ? clamp(Number(raw), 0, 100) : (state === "closed" ? 0 : 100);
     const moving = state === "opening" || state === "closing";
+    const sliderValue = this._sliderDraft === null ? position : this._sliderDraft;
     if (state !== this._lastState || (hasPosition && position !== this._lastPosition)) {
       this._started = Date.now();
       this._lastState = state;
@@ -145,6 +149,14 @@ class RolladenGlassCard extends HTMLElement {
         .pct{margin:5px 0 0 3px;font-size:11px;font-weight:600;opacity:.7}
         @keyframes pulse{50%{opacity:.3}}
         .error{padding:16px;color:var(--error-color)}
+        .controls{display:flex;justify-content:center;gap:12px;margin:12px 0 3px;position:relative;z-index:2}
+        .ctrl{width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.36);background:rgba(255,255,255,.17);color:var(--primary-text-color);font-size:18px;display:grid;place-items:center;backdrop-filter:blur(12px);cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.12)}
+        .ctrl:active{transform:scale(.92)}
+        .position-control{position:relative;z-index:2;margin:10px 5px 2px;padding:0 3px}
+        .position-head{display:flex;justify-content:space-between;align-items:center;font-size:11px;opacity:.8;margin-bottom:3px}
+        .position-value{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;opacity:1}
+        input[type=range]{width:100%;accent-color:var(--primary-color);cursor:pointer;margin:2px 0 0}
+        .position-scale{display:flex;justify-content:space-between;font-size:9px;opacity:.55}
       </style>
       <ha-card tabindex="0" role="button" aria-label="${esc(cfg.name)}: ${esc(status)}">
         <div class="layout">
@@ -187,8 +199,40 @@ class RolladenGlassCard extends HTMLElement {
           <div class="name">${esc(cfg.name || cfg.entity)}</div>
           <div class="label"><span class="status"><span class="dot"></span>${esc(status)}${hasPosition && cfg.show_position && cfg.position_mode==="inline" ? ` · ${position} %` : ""}</span>${positionText && cfg.position_mode==="below" ? positionText : ""}</div>
         </div>
+        ${cfg.show_controls ? `<div class="controls">
+          <button class="ctrl" data-action="open" aria-label="Öffnen" title="Öffnen">↑</button>
+          <button class="ctrl" data-action="stop" aria-label="Stoppen" title="Stoppen">■</button>
+          <button class="ctrl" data-action="close" aria-label="Schließen" title="Schließen">↓</button>
+        </div>` : ""}
+        ${cfg.show_slider && hasPosition ? `<div class="position-control">
+          <div class="position-head"><span>Position</span><span class="position-value" id="slider-value">${Math.round(sliderValue)} %</span></div>
+          <input id="position-slider" type="range" min="0" max="100" step="1" value="${Math.round(sliderValue)}" aria-label="Rollladenposition">
+          <div class="position-scale"><span>Zu</span><span>Offen</span></div>
+        </div>` : ""}
       </ha-card>`;
     const card = this.shadowRoot.querySelector("ha-card");
+    card.querySelectorAll(".ctrl").forEach(button => button.addEventListener("click", e => {
+      e.stopPropagation();
+      const action = button.dataset.action;
+      if (action === "open") this._callCover("open_cover");
+      if (action === "close") this._callCover("close_cover");
+      if (action === "stop") this._callCover("stop_cover");
+    }));
+    const slider = card.querySelector("#position-slider");
+    if (slider) {
+      const valueLabel = card.querySelector("#slider-value");
+      slider.addEventListener("input", e => {
+        this._sliderDraft = Number(e.target.value);
+        valueLabel.textContent = `${this._sliderDraft} %`;
+      });
+      slider.addEventListener("change", e => {
+        const value = Number(e.target.value);
+        this._sliderDraft = null;
+        this._hass.callService("cover", "set_cover_position", {entity_id:this._config.entity, position:value});
+      });
+      slider.addEventListener("pointerdown", e => e.stopPropagation());
+      slider.addEventListener("click", e => e.stopPropagation());
+    }
     let holdTimer = null;
     let held = false;
     card.addEventListener("pointerdown", () => {
@@ -208,10 +252,14 @@ class RolladenGlassCard extends HTMLElement {
     } else clearTimeout(this._timer);
   }
 
+  _callCover(service) {
+    this._hass.callService("cover", service, { entity_id: this._config.entity });
+  }
+
   _toggle() {
     const state = this._hass?.states[this._config.entity]?.state;
     const service = state === "open" || state === "opening" ? "close_cover" : "open_cover";
-    this._hass.callService("cover", service, { entity_id: this._config.entity });
+    this._callCover(service);
   }
 
   _moreInfo() {
@@ -261,7 +309,9 @@ class RolladenGlassCardEditor extends HTMLElement {
       show_slits:this._value("show_slits",DEFAULTS.show_slits),
       col_open:this._value("col_open",DEFAULTS.col_open),
       col_move:this._value("col_move",DEFAULTS.col_move),
-      col_closed:this._value("col_closed",DEFAULTS.col_closed)
+      col_closed:this._value("col_closed",DEFAULTS.col_closed),
+      show_controls:this._value("show_controls",DEFAULTS.show_controls),
+      show_slider:this._value("show_slider",DEFAULTS.show_slider)
     };
   }
   _value(key, fallback) { return this._config[key] ?? fallback; }
@@ -284,7 +334,9 @@ class RolladenGlassCardEditor extends HTMLElement {
       {name:"show_slits",label:"Lüftungsschlitze anzeigen",selector:{boolean:{}}},
       {name:"col_open",label:"Farbe: Offen",selector:{text:{}}},
       {name:"col_move",label:"Farbe: Bewegung",selector:{text:{}}},
-      {name:"col_closed",label:"Farbe: Geschlossen",selector:{text:{}}}
+      {name:"col_closed",label:"Farbe: Geschlossen",selector:{text:{}}},
+      {name:"show_controls",label:"Öffnen-/Stoppen-/Schließen-Tasten anzeigen",selector:{boolean:{}}},
+      {name:"show_slider",label:"Positionsregler mit Live-Prozentzahl anzeigen",selector:{boolean:{}}}
     ];
     this.shadowRoot.innerHTML = `<style>:host{display:block}ha-form{display:block}</style><ha-form></ha-form>`;
     const form = this.shadowRoot.querySelector("ha-form");
