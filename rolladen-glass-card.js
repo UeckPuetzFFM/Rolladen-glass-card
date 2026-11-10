@@ -223,8 +223,47 @@ class RolladenGlassCard extends HTMLElement {
 
 class RolladenGlassCardEditor extends HTMLElement {
   constructor() { super(); this.attachShadow({mode:"open"}); this._config = {}; }
-  setConfig(config) { this._config = {...config}; this._render(); }
-  set hass(hass) { this._hass = hass; this._render(); }
+  setConfig(config) {
+    this._config = {...config};
+    const form = this.shadowRoot.querySelector("ha-form");
+    if (form) {
+      // Keep the existing form instance alive: rebuilding it can close open selectors.
+      form.data = this._formData();
+      if (this._hass) form.hass = this._hass;
+    } else {
+      this._render();
+    }
+  }
+  set hass(hass) {
+    this._hass = hass;
+    const form = this.shadowRoot.querySelector("ha-form");
+    if (form) {
+      // HA sends a new hass object on frequent state updates. Update the property
+      // without replacing the form or its currently-open entity selector.
+      form.hass = hass;
+    } else {
+      this._render();
+    }
+  }
+  _formData() {
+    const cfg = this._config;
+    return {
+      entity:cfg.entity || "", name:this._value("name",DEFAULTS.name),
+      sun_entity:this._value("sun_entity",DEFAULTS.sun_entity),
+      travel_time:this._value("travel_time",DEFAULTS.travel_time),
+      position_mode:this._value("position_mode",DEFAULTS.position_mode),
+      long_words:this._value("long_words",DEFAULTS.long_words),
+      label_pill:this._value("label_pill",DEFAULTS.label_pill),
+      show_position:this._value("show_position",DEFAULTS.show_position),
+      show_clouds:this._value("show_clouds",DEFAULTS.show_clouds),
+      show_stars:this._value("show_stars",DEFAULTS.show_stars),
+      show_landscape:this._value("show_landscape",DEFAULTS.show_landscape),
+      show_slits:this._value("show_slits",DEFAULTS.show_slits),
+      col_open:this._value("col_open",DEFAULTS.col_open),
+      col_move:this._value("col_move",DEFAULTS.col_move),
+      col_closed:this._value("col_closed",DEFAULTS.col_closed)
+    };
+  }
   _value(key, fallback) { return this._config[key] ?? fallback; }
   _render() {
     if (!this._hass) return;
@@ -249,22 +288,8 @@ class RolladenGlassCardEditor extends HTMLElement {
     ];
     this.shadowRoot.innerHTML = `<style>:host{display:block}ha-form{display:block}</style><ha-form></ha-form>`;
     const form = this.shadowRoot.querySelector("ha-form");
-    form.data = {
-      entity:cfg.entity || "", name:this._value("name",DEFAULTS.name),
-      sun_entity:this._value("sun_entity",DEFAULTS.sun_entity),
-      travel_time:this._value("travel_time",DEFAULTS.travel_time),
-      position_mode:this._value("position_mode",DEFAULTS.position_mode),
-      long_words:this._value("long_words",DEFAULTS.long_words),
-      label_pill:this._value("label_pill",DEFAULTS.label_pill),
-      show_position:this._value("show_position",DEFAULTS.show_position),
-      show_clouds:this._value("show_clouds",DEFAULTS.show_clouds),
-      show_stars:this._value("show_stars",DEFAULTS.show_stars),
-      show_landscape:this._value("show_landscape",DEFAULTS.show_landscape),
-      show_slits:this._value("show_slits",DEFAULTS.show_slits),
-      col_open:this._value("col_open",DEFAULTS.col_open),
-      col_move:this._value("col_move",DEFAULTS.col_move),
-      col_closed:this._value("col_closed",DEFAULTS.col_closed)
-    };
+    form.hass = this._hass;
+    form.data = this._formData();
     form.schema = schema;
     form.computeLabel = (s) => s.label || s.name;
     form.addEventListener("value-changed", e => {
