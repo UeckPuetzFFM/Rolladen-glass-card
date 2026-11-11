@@ -1,6 +1,6 @@
 {
-  "name": "Rolladen Glass Card",
-  "filename": "rolladen-glass-card.js",
-  "render_readme": true,
-  "homeassistant": "2024.4.0"
+  "name": "Heating Glass Card",
+  "filename": "heating-glass-card.js",
+  "content_in_root": true,
+  "render_readme": true
 }
